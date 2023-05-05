@@ -1,5 +1,4 @@
 #include "vector.h"
-#include "common.h"
 
 Vector* init_vector(u_int32_t element_size) {
     Vector *new_vect = calloc(1, sizeof(struct vector));
@@ -19,6 +18,12 @@ void add_elem_vector(Vector *vect, void *data){
         DIE(vect->vector == NULL, "realloc crapa");
     }
     memcpy(vect->vector + (vect->length * vect->element_size), data, vect->element_size);
+    // if(vect->element_size == 1560){
+    //     u_int8_t *buf = vect->vector + (vect->length * vect->element_size);
+    //     for(int i = 0; i < 1560; i++){
+    //         printf("%hhu ", buf[i]);
+    //     }
+    // }
     (vect->length)++;
 }
 

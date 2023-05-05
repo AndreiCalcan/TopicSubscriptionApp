@@ -1,14 +1,24 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
-#define INITIAL_CAP 1
+#define INITIAL_CAP 10
+
+#define DIE(assertion, call_description)                                       \
+  do {                                                                         \
+    if (assertion) {                                                           \
+      fprintf(stderr, "(%s, %d): ", __FILE__, __LINE__);                       \
+      perror(call_description);                                                \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
+  } while (0)
 
 typedef struct vector
 {
     void *vector;
     u_int32_t capacity;
     u_int32_t length;
-    u_int8_t element_size;
+    u_int32_t element_size;
 } Vector;
 
 Vector* init_vector(u_int32_t element_size);

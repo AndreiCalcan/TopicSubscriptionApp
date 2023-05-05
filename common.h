@@ -3,21 +3,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
+#include <netinet/in.h>
+
+#include "vector.h"
 
 int send_all(int sockfd, void *buff, size_t len);
 int recv_all(int sockfd, void *buff, size_t len);
 
-#define MSG_MAXSIZE 1024
-
-#define DIE(assertion, call_description)                                       \
-  do {                                                                         \
-    if (assertion) {                                                           \
-      fprintf(stderr, "(%s, %d): ", __FILE__, __LINE__);                       \
-      perror(call_description);                                                \
-      exit(EXIT_FAILURE);                                                      \
-    }                                                                          \
-  } while (0)
+#define MSG_MAXSIZE 100
 
 struct chat_packet {
   uint16_t len;
@@ -26,18 +19,35 @@ struct chat_packet {
 };
 
 struct client {
-    char ID[10];
+  char ID[10];
+  int fd;
 };
 
 struct UDPpacket {
-    char topic[50];
-    uint8_t type;
-    char content[1500];
+  char topic[50];
+  uint8_t type;
+  char content[1500];
 };
 
 struct message {
-    struct in_addr addr;
-    uint16_t port;
-    struct UDPpacket packet;
+  struct in_addr addr;
+  uint16_t port;
+  struct UDPpacket packet;
+};
+
+struct TCPreq {
+  uint8_t type;
+  char topic[50];
+};
+
+struct topic {
+  char topic[50];
+  struct vector *messages;
+  struct vector *subscribers;
+};
+
+struct subscriber {
+  struct client *client;
+  int last_sent;
 };
 #endif
