@@ -117,6 +117,10 @@ void run_client(int sockfd)
                         return;
                     }
                     rc = recv_all(sockfd, &recv_packet, len);
+                    if (rc == 0)
+                    {
+                        return;
+                    }
                     // printf("recved smth\n");
                     printMessage(recv_packet);
                 }

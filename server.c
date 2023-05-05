@@ -15,6 +15,7 @@
 #define MAX_CLIENTS 1000
 #define MAX_CONNECTIONS 1000
 
+FILE *fptr;
 void send_variable(int type, int sockfd, void *data)
 {
     switch (type)
@@ -50,79 +51,9 @@ void send_variable(int type, int sockfd, void *data)
     }
 }
 
-void printMessage(struct message msg)
-{
-    char buf[100];
-    int length = 0;
-    memset(buf, 0, 100);
-    length += sprintf(buf, "%s:%hu - %s", inet_ntoa(msg.addr), ntohs(msg.port), msg.packet.topic);
-
-    switch (msg.packet.type)
-    {
-    case 0:
-    {
-        u_int8_t sign;
-        u_int32_t number;
-        memcpy(&sign, msg.packet.content, 1);
-        memcpy(&number, msg.packet.content + 1, 4);
-        number = ntohl(number);
-        if (sign == 1)
-        {
-            number *= -1;
-        }
-        printf("%s - INT - %d\n", buf, number);
-        break;
-    }
-    case 1:
-    {
-        uint16_t number;
-        memcpy(&number, msg.packet.content, 2);
-        number = ntohs(number);
-        double result = (double)number / 100;
-        printf("%s - SHORT_REAL - %.2lf\n", buf, result);
-        break;
-    }
-
-    case 2:
-    {
-        u_int8_t sign;
-        u_int32_t abs;
-        u_int8_t pow;
-        memcpy(&sign, msg.packet.content, 1);
-        memcpy(&abs, msg.packet.content + 1, 4);
-        memcpy(&pow, msg.packet.content + 5, 1);
-        abs = ntohl(abs);
-        double db = (double)abs;
-        for (int i = pow; i != 0; i--)
-        {
-            db /= 10;
-        }
-
-        if (sign == 1)
-        {
-            db *= -1;
-        }
-        printf("%s - FLOAT - %.15g\n", buf, db);
-        break;
-    }
-
-    case 3:
-    {
-        printf("%s - STRING - %s\n", buf, msg.packet.content);
-        break;
-    }
-
-    default:
-    {
-        printf("%s WIP\n", buf);
-        break;
-    }
-    }
-}
-
 void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
 {
-    FILE *fptr = fopen("server.out", "w");
+    fptr = fopen("server.out", "w");
     Vector *pollfds = init_vector(sizeof(struct pollfd));
     int num_clients = 3;
     int rc;
@@ -217,19 +148,42 @@ void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
                                 for (int k = 0; k < topics->length; k++)
                                 {
                                     struct subscriber *subscribers = crt_topics[k].subscribers->vector;
+                                    struct message *crt_msgs = crt_topics[k].messages->vector;
+                                    int min = INT32_MAX;
                                     for (int l = 0; l < crt_topics[k].subscribers->length; l++)
                                     {
                                         if (subscribers[l].client->fd == newsockfd && subscribers[l].last_sent > -2)
                                         {
                                             for (int m = subscribers[l].last_sent + 1; m < crt_topics[k].messages->length; m++)
                                             {
-                                                fprintf(fptr, "Sending in bulk msgs\n");
-                                                struct message *crt_msgs = crt_topics[k].messages->vector;
+                                                fprintf(fptr, "Sending in bulk msgs\n");       
                                                 // printf("trying to send message on topic %s\n", crt_msgs[m].packet.content);
                                                 send_variable(crt_msgs[m].packet.type, newsockfd, &crt_msgs[m]);
                                                 
                                             }
                                             subscribers[l].last_sent = crt_topics[k].messages->length - 1;
+                                        }
+
+                                        if(subscribers[l].last_sent < min && subscribers[l].last_sent > -2) {
+                                            min = subscribers[l].last_sent;
+                                        }
+                                    }
+                                    if(min >= 0 && min != INT32_MAX) {
+                                        fprintf(fptr, "Deleting %d pointless messages from topic %s\n", min + 1, crt_topics[k].topic);
+
+                                        for (int l = 0; l < crt_topics[k].subscribers->length; l++){
+                                            if(subscribers[l].last_sent > -2) {
+                                                subscribers[l].last_sent = subscribers[l].last_sent - min - 1;
+                                            }
+                                        }
+
+                                        while(min >= 0) {
+                                            for (int l = 0; l < crt_topics[k].messages->length - 1; l++)
+                                            {
+                                                crt_msgs[l] = crt_msgs[l + 1];
+                                            }
+                                            (crt_topics[k].messages->length)--;
+                                            min--;
                                         }
                                     }
                                 }
@@ -324,7 +278,7 @@ void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
                         new_topic.subscribers = init_vector(sizeof(struct subscriber));
                         memcpy(new_topic.topic, packet.packet.topic, 50);
                         add_elem_vector(topics, &new_topic);
-                        struct topic *top = topics->vector;
+                        // struct topic *top = topics->vector;
                         // printf("Added topic number %d - %s\n",topics->length - 1, top[topics->length - 1].topic);
                     }
                     // printMessage(packet);
@@ -528,6 +482,7 @@ int main(int argc, char *argv[])
     // Ichidem listenfd
     close(TCP_listenfd);
     close(UDP_listenfd);
+    fclose(fptr);
 
     return 0;
 }
