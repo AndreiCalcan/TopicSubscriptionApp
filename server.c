@@ -285,14 +285,11 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                 // Pentru abonatii conectati se trimite direct mesajul
                                 if (subscribers[k].client->fd != -1)
                                 {
-                                    // printf("trying to send message to %s on topic %s\n", subscribers[k].client->ID, packet.packet.topic);
-                                    // send_all(subscribers[k].client->fd, &packet, sizeof(struct message));
                                     send_variable(packet.packet.type, subscribers[k].client->fd, &packet);
-                                    // printf("sent message to %s on topic %s\n", subscribers[k].client->ID, packet.packet.topic);
                                 }
                                 else
                                 {
-                                    // Pentru ce deconectati care au store-and-forward enabled se sesizeaza nevoia de a memoriza mesajul
+                                    // Pentru cei deconectati care au store-and-forward enabled se sesizeaza nevoia de a memoriza mesajul
                                     if (subscribers[k].last_sent != -2)
                                     {
                                         need_storage = 1;
@@ -521,7 +518,10 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
 int main(int argc, char *argv[])
 {
     // Se dezactiveaza bufferingul la afisare
-    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+    int rc = setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+    DIE(rc != 0, "setvbuf");
+
+    // Se verifica ca numarul de argumente primite in linia de comanda este corect
     if (argc != 2)
     {
         printf("\n Usage: %s <port>\n", argv[0]);
@@ -530,7 +530,7 @@ int main(int argc, char *argv[])
 
     // Parsam port-ul ca un numar
     uint16_t port;
-    int rc = sscanf(argv[1], "%hu", &port);
+    rc = sscanf(argv[1], "%hu", &port);
     DIE(rc != 1, "Given port is invalid");
 
     // Obtinem un socket TCP pentru receptionarea conexiunilor

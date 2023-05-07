@@ -211,9 +211,11 @@ void run_client(int sockfd)
 int main(int argc, char *argv[])
 {
     // Se dezactiveaza bufferingul la afisare
-    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+    int rc = setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+    DIE(rc != 0, "setvbuf");
     int sockfd = -1;
 
+    // Se verifica ca numarul de argumente primite in linia de comanda este corect
     if (argc != 4)
     {
         printf("\n Usage: %s <id> <ip> <port>\n", argv[0]);
@@ -222,7 +224,7 @@ int main(int argc, char *argv[])
 
     // Parsam port-ul ca un numar
     uint16_t port;
-    int rc = sscanf(argv[3], "%hu", &port);
+    rc = sscanf(argv[3], "%hu", &port);
     DIE(rc != 1, "Given port is invalid");
 
     // Obtinem un socket TCP pentru conectarea la server
