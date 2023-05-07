@@ -12,11 +12,15 @@
 
 #include "common.h"
 
-FILE *fptr;
+// Functie de trimitere de pachete cu lungime variabila 
+// printr-un protocol de nivel aplicatie
 void send_variable(int type, int sockfd, void *data)
 {
+    // Lungimea se determina in functie de tipul de date trimis
     switch (type)
     {
+
+    // Pentru INT lungimea payloadului este 5
     case 0:
     {
         int len = 65;
@@ -24,6 +28,8 @@ void send_variable(int type, int sockfd, void *data)
         send_all(sockfd, data, len);
         break;
     }
+
+    // Pentru SHORT_REAL lungimea payloadului este 2;
     case 1:
     {
         int len = 62;
@@ -31,6 +37,8 @@ void send_variable(int type, int sockfd, void *data)
         send_all(sockfd, data, len);
         break;
     }
+
+    // Pentru FLOAT lungimea payloadului este 6
     case 2:
     {
         int len = 66;
@@ -38,6 +46,10 @@ void send_variable(int type, int sockfd, void *data)
         send_all(sockfd, data, len);
         break;
     }
+
+    // Pentru STRING lunigmea payloadului este lungimea stringului
+    // limitata superior de 1500 de caractere prin fortarea unui
+    // caracter null la final
     case 3:
     {
         struct message *payload = data;
@@ -49,59 +61,75 @@ void send_variable(int type, int sockfd, void *data)
         send_all(sockfd, data, len);
         break;
     }
+
+    // Pentru tip invalid nu se trimite nimic
+    default:
+        break;
     }
 }
 
+
+// Functia principala de rulare a serverului primeste ca parametrii file descriptorii
+// pe care se accepta conexiuni pentru TCP si pe care se trimit pachete pentru UDP
 void run_server(int TCP_listenfd, int UDP_listenfd)
 {
-    fptr = fopen("server.out", "w");
+    // Se initializeaza vectorul folosit pentru poll_fds
     Vector *pollfds = init_vector(sizeof(struct pollfd));
     int num_clients = 3;
     int rc;
 
-    // Setam socket-ul listenfd pentru ascultare
+    // Setam socket-ul de TCP pentru ascultare
     rc = listen(TCP_listenfd, SOMAXCONN);
     DIE(rc < 0, "listen");
 
-    // se adauga noul file descriptor (socketul pe care se asculta conexiuni) in
-    // multimea read_fds
+    // Se adauga file descriptorii initiali
     struct pollfd aux;
+
+    // Fd pentru socketul de conexiune TCP
     aux.fd = TCP_listenfd;
     aux.events = POLLIN;
-
     add_elem_vector(pollfds, &aux);
 
+    // Fd pentru primire pachete UDP
     aux.fd = UDP_listenfd;
     aux.events = POLLIN;
-
     add_elem_vector(pollfds, &aux);
 
+    // Fd pentru intrarile de la tastatura (stdin)
     aux.fd = 0;
     aux.events = POLLIN;
-
     add_elem_vector(pollfds, &aux);
 
+    // Se initializeaza structurile interne pentru memorizare de clienti si mesaje sortate pe topice
     Vector *clients = init_vector(sizeof(struct client));
     Vector *topics = init_vector(sizeof(struct topic));
     char buf[MSG_MAXSIZE];
     memset(buf, 0, MSG_MAXSIZE);
 
+    // Loopul principal pe care ruleaza serverul pana la oprire
     while (1)
     {
+        // Se actualizeaza pointerii cu ce se afla in memorie
         struct pollfd *poll_fds = (struct pollfd *)pollfds->vector;
         num_clients = pollfds->length;
+
+        // Se efectueaza multiplexarea prin poll pe fd din poll_fds
         rc = poll(poll_fds, num_clients, 0);
         DIE(rc < 0, "poll");
 
+        // Parcurgere prin toti descriptorii multiplexati
         for (int i = 0; i < num_clients; i++)
         {
+            // Unde se primeste un event de tipul POLLIN
             if (poll_fds[i].revents & POLLIN)
             {
-                // printf("sper aici\n");
+                // Pentru intrari de la stdin
                 if (poll_fds[i].fd == 0)
                 {
-                    // printf("sper aici\n");
+                    // Se citeste o linie cu lungimea maxima 100
                     fgets(buf, sizeof(buf), stdin);
+
+                    // Pentru comanda exit se elibereaza memoria alocata pe heap si returneaza apelul
                     if (strcmp(buf, "exit\n") == 0)
                     {
                         struct topic *crt_topics = (struct topic *)topics->vector;
@@ -116,40 +144,44 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                     }
                 }
 
+                // Pentru intrari pe socketul de ascultare de conexiuni TCP
                 else if (poll_fds[i].fd == TCP_listenfd)
                 {
-                    // printf("aici\n");
-                    // a venit o cerere de conexiune pe socketul inactiv (cel cu listen),
-                    // pe care serverul o accepta
+                    // Serverul accepta conexiunea 
                     struct sockaddr_in cli_addr;
                     socklen_t cli_len = sizeof(cli_addr);
                     int newsockfd = accept(TCP_listenfd, (struct sockaddr *)&cli_addr, &cli_len);
                     DIE(newsockfd < 0, "accept");
 
-                    // se adauga noul socket intors de accept() la multimea descriptorilor
-                    // de citire
+                    // Adauga in vectorul de poll_fds noul socket deschis
                     aux.fd = newsockfd;
                     aux.events = POLLIN;
                     add_elem_vector(pollfds, &aux);
                     poll_fds = (struct pollfd *)pollfds->vector;
 
+                    // Asteapta pe acest socket sa primeasca de la client ID-ul sau
                     struct client new_client;
                     recv_all(newsockfd, new_client.ID, 10);
 
+                    // Cauta in memorie daca IDul primit a mai fost conectat precedent
                     int found = 0;
                     struct client *crt_clients = (struct client *)clients->vector;
                     for (int j = 0; j < clients->length && found == 0; j++)
                     {
+                        // Daca il gaseste deja in memorie si are deja un client conectat sub acel ID inchide conexiunea
                         if (strcmp(new_client.ID, crt_clients[j].ID) == 0)
                         {
                             found = 1;
                             if (crt_clients[j].fd != -1)
                             {
                                 printf("Client %s already connected.\n", new_client.ID);
-                                fprintf(fptr, "Client %s already connected.\n", new_client.ID);
                                 close(newsockfd);
                                 (pollfds->length)--;
                             }
+
+                            // Pentru ID cunoscut cauta in memorie la fiecare topic daca exista un subscription
+                            // cu store-and-forward setat si trimite mesajele primite de la deconectarea utilizatorului
+                            // Aditional, se sterg toate mesajele inutile care au fost trimise deja tuturor abonatilor
                             else
                             {
                                 crt_clients[j].fd = newsockfd;
@@ -159,33 +191,37 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                     struct subscriber *subscribers = crt_topics[k].subscribers->vector;
                                     struct message *crt_msgs = crt_topics[k].messages->vector;
                                     int min = INT32_MAX;
+
+                                    // Prin parcurgerea subscriberilor se determina cel mai vechi mesaje netrimis (minimul dintre campurile last_sent)
                                     for (int l = 0; l < crt_topics[k].subscribers->length; l++)
                                     {
+                                        // Pentru un subscription de la clientul nou conectat se trimit mesajele restante
                                         if (subscribers[l].client->fd == newsockfd && subscribers[l].last_sent > -2)
                                         {
                                             for (int m = subscribers[l].last_sent + 1; m < crt_topics[k].messages->length; m++)
-                                            {
-                                                fprintf(fptr, "Sending in bulk msgs\n");       
-                                                // printf("trying to send message on topic %s\n", crt_msgs[m].packet.content);
+                                            {   
                                                 send_variable(crt_msgs[m].packet.type, newsockfd, &crt_msgs[m]);
-                                                
                                             }
                                             subscribers[l].last_sent = crt_topics[k].messages->length - 1;
                                         }
-
+                                        
+                                        // Se proceseaza minimul ignorand abonarile facute fara SF
                                         if(subscribers[l].last_sent < min && subscribers[l].last_sent > -2) {
                                             min = subscribers[l].last_sent;
                                         }
                                     }
-                                    if(min >= 0 && min != INT32_MAX) {
-                                        fprintf(fptr, "Deleting %d pointless messages from topic %s\n", min + 1, crt_topics[k].topic);
 
+                                    // Daca exista mesaje inutile
+                                    if (min >= 0 && min != INT32_MAX) {
+
+                                        // Actualizeaza informatia legata de ultimul mesaj trimis pentru fiecare subscriber
                                         for (int l = 0; l < crt_topics[k].subscribers->length; l++){
                                             if(subscribers[l].last_sent > -2) {
                                                 subscribers[l].last_sent = subscribers[l].last_sent - min - 1;
                                             }
                                         }
 
+                                        // Se sterge cel mai vechi mesaj pana se ajunge la unul netrimis
                                         while(min >= 0) {
                                             for (int l = 0; l < crt_topics[k].messages->length - 1; l++)
                                             {
@@ -196,20 +232,16 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                         }
                                     }
                                 }
+                                // Serverul anunta noua conexiune si se opreste cautarea prin clientii din memorie
                                 printf("New client %s connected from %s:%hu.\n",
                                        new_client.ID, inet_ntoa(cli_addr.sin_addr),
                                        ntohs(cli_addr.sin_port));
-                                fprintf(fptr, "New client %s connected from %s:%hu.\n",
-                                        new_client.ID, inet_ntoa(cli_addr.sin_addr),
-                                        ntohs(cli_addr.sin_port));
-                                // printf("Already existing client %s connected from %s:%d, socket client %d\n",
-                                // new_client.ID, inet_ntoa(cli_addr.sin_addr),
-                                // ntohs(cli_addr.sin_port), newsockfd);
                             }
                             break;
                         }
                     }
 
+                    // Daca clientul nu a fost gasit se introduce in memorie si se afiseaza conexiunea la stdout
                     if (found == 0)
                     {
                         new_client.fd = newsockfd;
@@ -217,13 +249,13 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                         printf("New client %s connected from %s:%hu.\n",
                                new_client.ID, inet_ntoa(cli_addr.sin_addr),
                                ntohs(cli_addr.sin_port));
-                        fprintf(fptr, "New client %s connected from %s:%hu.\n",
-                                new_client.ID, inet_ntoa(cli_addr.sin_addr),
-                                ntohs(cli_addr.sin_port));
                     }
                 }
+
+                // Pentru pachete primite de la un client UDP
                 else if (poll_fds[i].fd == UDP_listenfd)
                 {
+                    // Se primeste si mesajul si e trimite un ack
                     struct message packet;
                     struct sockaddr_in client_addr;
                     socklen_t clen = sizeof(client_addr);
@@ -233,12 +265,16 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                     rc = sendto(UDP_listenfd, &ack, sizeof(ack), 0, (struct sockaddr *)&client_addr, clen);
                     DIE(rc < 0, "send");
 
+                    // Se completeaza portul si adresa de pe care au venit mesajele
                     packet.port = client_addr.sin_port;
                     packet.addr = client_addr.sin_addr;
+
+                    // Se efectueaza o cautare in memorie dupa topicul mesajului primit
                     int found = 0;
                     struct topic *crt_topics = (struct topic *)topics->vector;
                     for (int j = 0; j < topics->length; j++)
                     {
+                        // Daca topicul este gasit se parcurg abonatii
                         if (strncmp(packet.packet.topic, crt_topics[j].topic, 50) == 0)
                         {
                             found = 1;
@@ -246,6 +282,7 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                             struct subscriber *subscribers = crt_topics[j].subscribers->vector;
                             for (int k = 0; k < crt_topics[j].subscribers->length; k++)
                             {
+                                // Pentru abonatii conectati se trimite direct mesajul
                                 if (subscribers[k].client->fd != -1)
                                 {
                                     // printf("trying to send message to %s on topic %s\n", subscribers[k].client->ID, packet.packet.topic);
@@ -255,12 +292,15 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                 }
                                 else
                                 {
+                                    // Pentru ce deconectati care au store-and-forward enabled se sesizeaza nevoia de a memoriza mesajul
                                     if (subscribers[k].last_sent != -2)
                                     {
                                         need_storage = 1;
                                     }
                                 }
                             }
+
+                            // Pentru cand mesajul trebuie memorizat se actualizeaza ultimul mesaj trimis celor conectati si abonati cu SF
                             if (need_storage == 1)
                             {
                                 for (int k = 0; k < crt_topics[j].subscribers->length; k++)
@@ -270,16 +310,12 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                         (subscribers[k].last_sent)++;
                                     }
                                 }
-                                // printf("storing message on topic %s\n", packet.packet.topic);
-                                // printMessage(packet);
+                                // Se adauga mesajul in memorie
                                 add_elem_vector(crt_topics[j].messages, &packet);
-
-                                // struct message *msg = crt_topics[j].messages->vector;
-                                // printf("stored message number %d on topic %s\n",crt_topics[j].messages->length, msg[crt_topics[j].messages->length - 1].packet.topic);
-                                // printMessage(msg[crt_topics[j].messages->length - 1]);
                             }
                         }
                     }
+                    // Cand topicul nu a fost gasit se initializeaza si adauga in memorie
                     if (found == 0)
                     {
                         struct topic new_topic;
@@ -287,15 +323,14 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                         new_topic.subscribers = init_vector(sizeof(struct subscriber));
                         memcpy(new_topic.topic, packet.packet.topic, 50);
                         add_elem_vector(topics, &new_topic);
-                        // struct topic *top = topics->vector;
-                        // printf("Added topic number %d - %s\n",topics->length - 1, top[topics->length - 1].topic);
                     }
-                    // printMessage(packet);
                 }
+
+                // Pentru mesajele primite de la un client TCP
                 else
                 {
+                    // Se cauta clientul in memorie si se determina indexul lui in lista de clienti
                     struct TCPreq received_packet;
-                    // printf("nu aici\n");
                     int client_index = -1;
                     struct client *clients_arr = (struct client *)clients->vector;
                     for (int j = 0; j < clients->length; j++)
@@ -307,20 +342,21 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                         }
                     }
                     DIE(client_index == -1, "client not found");
-                    // s-au primit date pe unul din socketii de client,
-                    // asa ca serverul trebuie sa le receptioneze
+
+                    // Se receptioneaza mesajul de pe socket
                     int rc = recv_all(poll_fds[i].fd, &received_packet,
                                       sizeof(received_packet));
                     DIE(rc < 0, "recv");
 
+                    // Pentru cand se primeste un mesaj de lungime 0
                     if (rc == 0)
                     {
-                        // conexiunea s-a inchis
-                        printf("Client %s disconnected.\n", clients_arr[client_index].ID);
-                        fprintf(fptr, "Client %s disconnected.\n", clients_arr[client_index].ID);
+                        // Se inchide conexiunea si se anunta la stdout
                         close(poll_fds[i].fd);
+                        printf("Client %s disconnected.\n", clients_arr[client_index].ID);
                         clients_arr[client_index].fd = -1;
-                        // se scoate din multimea de citire socketul inchis
+
+                        // Se scoate din multimea de citire socketul inchis
                         for (int j = i; j < pollfds->length - 1; j++)
                         {
                             poll_fds[j] = poll_fds[j + 1];
@@ -329,24 +365,25 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                         num_clients--;
                         (pollfds->length)--;
                     }
+                    // Pentru pachete cu lungimea > 0
                     else
                     {
-                        // printf("Command from %s - type %hhd - topic %s\n",
-                        //        clients_arr[client_index].ID, received_packet.type, received_packet.topic);
+                        // Se actioneaza in functie de tipul comenzii
                         switch (received_packet.type)
                         {
+
+                        // Pentru comenzi de dezabonare (unsubscribe)
                         case 0:
                         {
+                            // Se cauta in memorie topicul si se sterge orice abonament pe Idul clientului la acel topic
                             struct topic *crt_topics = (struct topic *)topics->vector;
                             for (int j = 0; j < topics->length; j++)
                             {
                                 if (strncmp(received_packet.topic, crt_topics[j].topic, 50) == 0)
                                 {
-                                    fprintf(fptr, "Trying to unsub from %s\n", received_packet.topic);
                                     struct subscriber *subscribers = crt_topics[j].subscribers->vector;
                                     for (int k = 0; k < crt_topics[j].subscribers->length; k++)
                                     {
-                                        fprintf(fptr, "Checking subscriber %s, on fd %d compared to %d\n", subscribers[k].client->ID, subscribers[k].client->fd, poll_fds[i].fd);
                                         if (subscribers[k].client->fd == poll_fds[i].fd)
                                         {
                                             for (int l = k; l < crt_topics[j].subscribers->length - 1; l++)
@@ -354,32 +391,42 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                                 subscribers[l] = subscribers[l + 1];
                                             }
                                             (crt_topics[j].subscribers->length)--;
-                                            fprintf(fptr, "Unsubscribed client from topic %s, %d subs remain\n", received_packet.topic, crt_topics[j].subscribers->length);
                                         }
                                     }
                                 }
                             }
                             break;
                         }
+
+                        // Pentru comenzi de abonare fara SF (subscribe topic 0)
                         case 1:
                         {
+                            // Se cauta topicul
                             uint8_t found = 0;
                             struct topic *crt_topics = (struct topic *)topics->vector;
                             for (int j = 0; j < topics->length; j++)
                             {
+                                // Daca este gasit topicul
                                 if (strncmp(received_packet.topic, crt_topics[j].topic, 50) == 0)
                                 {
+                                    // Se cauta printre abonamente daca exista deja unul facut pe IDul clientului
                                     found = 1;
                                     int already_subscribed = 0;
                                     struct subscriber* subs = crt_topics[j].subscribers->vector;
-                                    for(int k = 0; k < crt_topics[j].subscribers->length; k++){
-                                        if(subs[k].client->fd == poll_fds[i].fd) {
+                                    for(int k = 0; k < crt_topics[j].subscribers->length; k++)
+                                    {
+                                        // Daca exista deja unul actualizeaza tipul abonamentului
+                                        if(subs[k].client->fd == poll_fds[i].fd) 
+                                        {
                                             already_subscribed = 1;
                                             subs[k].last_sent = -2;
                                         }
                                         break;
                                     }
-                                    if (already_subscribed == 0) {
+
+                                    // Daca nu este gasit un abonament creeaza unul nou si il adauga in memorie
+                                    if (already_subscribed == 0) 
+                                    {
                                         struct subscriber new_subscriber;
                                         new_subscriber.client = &clients_arr[client_index];
                                         new_subscriber.last_sent = -2;
@@ -389,6 +436,7 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                 }
                             }
 
+                            // Daca topicul nu este gasit, se creeaza si se adauga noul subscriber
                             if (found == 0)
                             {
                                 struct topic new_topic;
@@ -403,25 +451,36 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                             }
                             break;
                         }
+
+                        // Pentru comenzi de abonare cu SF (subscribe topic 1)
                         case 2:
                         {
+                            // Se cauta topicul
                             uint8_t found = 0;
                             struct topic *crt_topics = (struct topic *)topics->vector;
                             for (int j = 0; j < topics->length; j++)
                             {
+                                // Daca este gasit topicul
                                 if (strncmp(received_packet.topic, crt_topics[j].topic, 50) == 0)
                                 {
+                                    // Se cauta printre abonamente daca exista deja unul facut pe IDul clientului
                                     found = 1;
                                     int already_subscribed = 0;
                                     struct subscriber* subs = crt_topics[j].subscribers->vector;
-                                    for(int k = 0; k < crt_topics[j].subscribers->length; k++){
-                                        if(subs[k].client->fd == poll_fds[i].fd) {
+                                    for(int k = 0; k < crt_topics[j].subscribers->length; k++)
+                                    {
+                                        // Daca exista deja unul actualizeaza tipul abonamentului
+                                        if(subs[k].client->fd == poll_fds[i].fd) 
+                                        {
                                             already_subscribed = 1;
                                             subs[k].last_sent = crt_topics[j].messages->length - 1;
                                         }
                                         break;
                                     }
-                                    if(already_subscribed == 0) {
+
+                                    // Daca nu este gasit un abonament creeaza unul nou si il adauga in memorie
+                                    if(already_subscribed == 0) 
+                                    {
                                         struct subscriber new_subscriber;
                                         new_subscriber.client = &clients_arr[client_index];
                                         new_subscriber.last_sent = crt_topics[j].messages->length - 1;
@@ -431,6 +490,7 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                                 }
                             }
 
+                            // Daca topicul nu este gasit, se creeaza si se adauga noul subscriber
                             if (found == 0)
                             {
                                 struct topic new_topic;
@@ -446,6 +506,7 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                             break;
                         }
 
+                        // Pentru un tip invalid se ignora pachetul primit
                         default:
                             break;
                         }
@@ -456,8 +517,10 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
     }
 }
 
+// Functia apelata la rularea executabilului
 int main(int argc, char *argv[])
 {
+    // Se dezactiveaza bufferingul la afisare
     setvbuf(stdout, NULL, _IONBF, BUFSIZ);
     if (argc != 2)
     {
@@ -474,6 +537,7 @@ int main(int argc, char *argv[])
     int TCP_listenfd = socket(AF_INET, SOCK_STREAM, 0);
     DIE(TCP_listenfd < 0, "socket TCP");
 
+    // Obtinem un socket UDP pentru receptionarea de mesaje de la astfel de clienti
     int UDP_listenfd = socket(AF_INET, SOCK_DGRAM, 0);
     DIE(UDP_listenfd < 0, "socket UDP");
 
@@ -481,39 +545,40 @@ int main(int argc, char *argv[])
     // pentru conectare
     struct sockaddr_in serv_addr;
     socklen_t socket_len = sizeof(struct sockaddr_in);
-
-    // Facem adresa socket-ului reutilizabila, ca sa nu primim eroare in caz ca
-    // rulam de 2 ori rapid
-    int UDP_enable = 1;
-    if (setsockopt(UDP_listenfd, SOL_SOCKET, SO_REUSEADDR, &UDP_enable, sizeof(int)) < 0)
-        perror("setsockopt(SO_REUSEADDR) failed");
-
-    int TCP_enable = 1;
-    if (setsockopt(TCP_listenfd, IPPROTO_TCP, TCP_NODELAY, &TCP_enable, sizeof(int)) < 0)
-        perror("setsockopt(TCP_NODELAY) failed");
-
-    if (setsockopt(TCP_listenfd, SOL_SOCKET, SO_REUSEADDR, &TCP_enable, sizeof(int)) < 0)
-        perror("setsockopt(SO_REUSEADDR) failed");
-
     memset(&serv_addr, 0, socket_len);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     DIE(rc <= 0, "inet_pton");
 
-    // Asociem adresa serverului cu socketul creat folosind bind
+    // Facem adresa socket-ului UDP reutilizabila, ca sa nu primim eroare in caz ca
+    // rulam de 2 ori rapid
+    int UDP_enable = 1;
+    if (setsockopt(UDP_listenfd, SOL_SOCKET, SO_REUSEADDR, &UDP_enable, sizeof(int)) < 0)
+        perror("setsockopt(SO_REUSEADDR) failed");
+
+    // Dezactivam algoritmul lui Nagle
+    int TCP_enable = 1;
+    if (setsockopt(TCP_listenfd, IPPROTO_TCP, TCP_NODELAY, &TCP_enable, sizeof(int)) < 0)
+        perror("setsockopt(TCP_NODELAY) failed");
+
+    // Facem adresa socket-ului TCP reutilizabila, ca sa nu primim eroare in caz ca
+    // rulam de 2 ori rapid
+    if (setsockopt(TCP_listenfd, SOL_SOCKET, SO_REUSEADDR, &TCP_enable, sizeof(int)) < 0)
+        perror("setsockopt(SO_REUSEADDR) failed");
+
+    // Asociem adresa serverului cu socketii creati folosind bind
     rc = bind(TCP_listenfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
     DIE(rc < 0, "bind");
     rc = bind(UDP_listenfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
     DIE(rc < 0, "bind");
 
-    // run_chat_server(listenfd);
+    // Incepem rularea
     run_server(TCP_listenfd, UDP_listenfd);
 
-    // Ichidem listenfd
+    // Inchidem socketii
     close(TCP_listenfd);
     close(UDP_listenfd);
-    fclose(fptr);
 
     return 0;
 }
