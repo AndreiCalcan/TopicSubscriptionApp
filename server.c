@@ -12,9 +12,6 @@
 
 #include "common.h"
 
-#define MAX_CLIENTS 1000
-#define MAX_CONNECTIONS 1000
-
 FILE *fptr;
 void send_variable(int type, int sockfd, void *data)
 {
@@ -43,7 +40,11 @@ void send_variable(int type, int sockfd, void *data)
     }
     case 3:
     {
-        int len = 1560;
+        struct message *payload = data;
+        char aux = payload->packet.content[1499];
+        payload->packet.content[1499] = '\0';
+        int len = 60 + strlen(payload->packet.content) + 1;
+        payload->packet.content[1499] = aux;
         send_all(sockfd, &len, sizeof(int));
         send_all(sockfd, data, len);
         break;
@@ -51,7 +52,7 @@ void send_variable(int type, int sockfd, void *data)
     }
 }
 
-void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
+void run_server(int TCP_listenfd, int UDP_listenfd)
 {
     fptr = fopen("server.out", "w");
     Vector *pollfds = init_vector(sizeof(struct pollfd));
@@ -59,7 +60,7 @@ void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
     int rc;
 
     // Setam socket-ul listenfd pentru ascultare
-    rc = listen(TCP_listenfd, MAX_CLIENTS);
+    rc = listen(TCP_listenfd, SOMAXCONN);
     DIE(rc < 0, "listen");
 
     // se adauga noul file descriptor (socketul pe care se asculta conexiuni) in
@@ -103,6 +104,14 @@ void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
                     fgets(buf, sizeof(buf), stdin);
                     if (strcmp(buf, "exit\n") == 0)
                     {
+                        struct topic *crt_topics = (struct topic *)topics->vector;
+                        for(int j = 0; j < topics->length; j++){
+                            free_vector(crt_topics[j].messages);
+                            free_vector(crt_topics[j].subscribers);
+                        }
+                        free_vector(topics);
+                        free_vector(clients);
+                        free_vector(pollfds);
                         return;
                     }
                 }
@@ -361,10 +370,21 @@ void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
                                 if (strncmp(received_packet.topic, crt_topics[j].topic, 50) == 0)
                                 {
                                     found = 1;
-                                    struct subscriber new_subscriber;
-                                    new_subscriber.client = &clients_arr[client_index];
-                                    new_subscriber.last_sent = -2;
-                                    add_elem_vector(crt_topics[j].subscribers, &new_subscriber);
+                                    int already_subscribed = 0;
+                                    struct subscriber* subs = crt_topics[j].subscribers->vector;
+                                    for(int k = 0; k < crt_topics[j].subscribers->length; k++){
+                                        if(subs[k].client->fd == poll_fds[i].fd) {
+                                            already_subscribed = 1;
+                                            subs[k].last_sent = -2;
+                                        }
+                                        break;
+                                    }
+                                    if (already_subscribed == 0) {
+                                        struct subscriber new_subscriber;
+                                        new_subscriber.client = &clients_arr[client_index];
+                                        new_subscriber.last_sent = -2;
+                                        add_elem_vector(crt_topics[j].subscribers, &new_subscriber);
+                                    }
                                     break;
                                 }
                             }
@@ -392,10 +412,21 @@ void run_chat_multi_server(int TCP_listenfd, int UDP_listenfd)
                                 if (strncmp(received_packet.topic, crt_topics[j].topic, 50) == 0)
                                 {
                                     found = 1;
-                                    struct subscriber new_subscriber;
-                                    new_subscriber.client = &clients_arr[client_index];
-                                    new_subscriber.last_sent = crt_topics[j].messages->length - 1;
-                                    add_elem_vector(crt_topics[j].subscribers, &new_subscriber);
+                                    int already_subscribed = 0;
+                                    struct subscriber* subs = crt_topics[j].subscribers->vector;
+                                    for(int k = 0; k < crt_topics[j].subscribers->length; k++){
+                                        if(subs[k].client->fd == poll_fds[i].fd) {
+                                            already_subscribed = 1;
+                                            subs[k].last_sent = crt_topics[j].messages->length - 1;
+                                        }
+                                        break;
+                                    }
+                                    if(already_subscribed == 0) {
+                                        struct subscriber new_subscriber;
+                                        new_subscriber.client = &clients_arr[client_index];
+                                        new_subscriber.last_sent = crt_topics[j].messages->length - 1;
+                                        add_elem_vector(crt_topics[j].subscribers, &new_subscriber);
+                                    }
                                     break;
                                 }
                             }
@@ -477,7 +508,7 @@ int main(int argc, char *argv[])
     DIE(rc < 0, "bind");
 
     // run_chat_server(listenfd);
-    run_chat_multi_server(TCP_listenfd, UDP_listenfd);
+    run_server(TCP_listenfd, UDP_listenfd);
 
     // Ichidem listenfd
     close(TCP_listenfd);

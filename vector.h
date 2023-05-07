@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define INITIAL_CAP 10
+#define INITIAL_CAP 1
 
 #define DIE(assertion, call_description)                                       \
   do {                                                                         \
@@ -17,7 +17,7 @@ typedef struct vector
 {
     void *vector;
     u_int32_t capacity;
-    u_int32_t length;
+    int length;
     u_int32_t element_size;
 } Vector;
 

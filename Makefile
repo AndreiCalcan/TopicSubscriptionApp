@@ -8,9 +8,9 @@ IP_SERVER = 127.0.0.1
 
 all: server subscriber
 
-vector.o: vector.c
+vector.o: vector.c vector.h
 
-common.o: common.c
+common.o: common.c common.h vector.h
 
 # Compileaza server.c
 server: server.c common.o vector.o
@@ -30,4 +30,4 @@ run_client:
 	./subscriber 1 127.0.0.1 12345
 
 clean:
-	rm -rf server client *.o *.dSYM
+	rm -rf server client *.o *.dSYM *.out
