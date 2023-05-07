@@ -16,8 +16,7 @@ common.o: common.c common.h vector.h
 server: server.c common.o vector.o
 
 # Compileaza client.c
-subscriber: client.c common.o vector.o
-	gcc -o subscriber -Wall -g -Werror -Wno-error=unused-variable client.c common.o vector.o
+subscriber: subscriber.c common.o vector.o
 
 .PHONY: clean run_server run_client
 
@@ -30,4 +29,4 @@ run_client:
 	./subscriber 1 127.0.0.1 12345
 
 clean:
-	rm -rf server client *.o *.dSYM *.out
+	rm -rf server subscriber *.o

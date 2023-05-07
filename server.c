@@ -127,7 +127,7 @@ void run_server(int TCP_listenfd, int UDP_listenfd)
                 if (poll_fds[i].fd == 0)
                 {
                     // Se citeste o linie cu lungimea maxima 100
-                    fgets(buf, sizeof(buf), stdin);
+                    fgets(buf, sizeof(buf) - 1, stdin);
 
                     // Pentru comanda exit se elibereaza memoria alocata pe heap si returneaza apelul
                     if (strcmp(buf, "exit\n") == 0)
