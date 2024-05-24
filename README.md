@@ -1,9 +1,11 @@
-# Aceasta tema implementeaza servicii de abonare si dezabonare printr-o aplicatie client-server peste socketi TCP,
+# Scurta descriere
+Aceasta tema implementeaza servicii de abonare si dezabonare printr-o aplicatie client-server peste socketi TCP,
 conform https://gitlab.cs.pub.ro/pcom/homework2-public/-/blob/main/Enunt_Tema_2_Protocoale_2022_2023.pdf.
 Implementarea porneste de la scheletul laboratorului de multiplexare, dar este puternic modificat pentru cerintele curente.
 Astfel, orice send/recv efectuat pe o conexiune TCP este facuta intr-o bucla pana la trimiterea intregului pachet.
 
-# Serverul este rulat prin comanda ./server <port>. La rulare serverul dezactiveaza bufferingul la afisare si verifica
+# Detalii de implementare 
+Serverul este rulat prin comanda ./server <port>. La rulare serverul dezactiveaza bufferingul la afisare si verifica
 corectitudinea numarului de parametrii primiti. In cazul in care primeste prea putini/multi parametrii programul afiseaza
 un mesaj sugestiv cu utilizarea corecta si se inchide. Pentru o rulare corecta serverul obtine de la sistemul de operare
 doi socketi, unul pentru ascultarea de conexiuni TCP si unul pentru UDP, ale caror adrese sunt facute reutilizabile, iar 
@@ -42,7 +44,7 @@ un abonament pe IDul clientului, iar daca da se actualizeaza modul abonarii. Pen
 facuta de un client, doar se adauga la lista de abonamente. In mod aditional, daca topicul nu este gasit in memorie, 
 acesta este creat simultan cu noul abonament introdus in capul listei acestui topic.
 
-# Un subscriber este rulat cu ./subscriber <id> <ip> <port>. Validarea argumentelor se face similar cu serverul, iar partea
+Un subscriber este rulat cu ./subscriber <id> <ip> <port>. Validarea argumentelor se face similar cu serverul, iar partea
 de setup este mai simplista, facandu-se doar un connect pe IP-ul si portul primite care parametrii ai programului, folosind
 un socket TCP reutilizabil fara algoritmul lui Nagle. De data aceasta vectorul pollfds are dimensiune fixa egala cu 2,
 clientul lucrand doar cu socketul de conexiune cu serverul si intrarea standard. Acestea sunt parcurse similar cu serverul
